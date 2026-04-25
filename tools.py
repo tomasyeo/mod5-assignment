@@ -2,7 +2,7 @@ import os
 import joblib
 import pandas as pd
 from langchain.tools import tool
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 from langchain_groq import ChatGroq
 from prompts import WEB_SEARCH_PROMPT
 from logger import logger
