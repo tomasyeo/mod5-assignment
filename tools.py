@@ -28,24 +28,32 @@ def web_search(query: str) -> str:
     
     logger.debug("Summarizing search results via LLM...")
     from config import GROQ_MODEL
+    from langchain_core.messages import SystemMessage, HumanMessage
     llm = ChatGroq(temperature=0, model_name=GROQ_MODEL)
-    summary = llm.invoke(f"{WEB_SEARCH_PROMPT}\n\nSearch Results: {raw_results}\n\nUser Query: {query}").content
+    summary = llm.invoke([
+        SystemMessage(content=WEB_SEARCH_PROMPT),
+        HumanMessage(content=f"Search Results: {raw_results}\n\nUser Query: {query}")
+    ]).content
     
     logger.info("web_search tool completed summary.")
     return summary
-
-@tool
 def predict_salary(age: int) -> str:
     """Predicts estimated annual salary based on age using a pre-trained ML model."""
     logger.info(f"Tool called: predict_salary for age: {age}")
     try:
         from config import MODEL_PATH
         logger.debug(f"Loading model from: {MODEL_PATH}")
-        model = joblib.load(MODEL_PATH)
+        loaded_data = joblib.load(MODEL_PATH)
         
+        # The joblib file is actually a dictionary containing the model and metadata
+        if isinstance(loaded_data, dict) and 'model' in loaded_data:
+            model = loaded_data['model']
+        else:
+            model = loaded_data
+            
         df = pd.DataFrame([[float(age)]], columns=['Age'])
         prediction = model.predict(df)[0]
-        
+
         result = f"Based on the age of {age}, the predicted annual salary is ${prediction:,.2f}."
         logger.info(f"Salary prediction result: {result}")
         return result

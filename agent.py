@@ -191,12 +191,47 @@ def create_agent_graph(groq_api_key):
     # Salary Agent retains React capabilities as it relies on the custom joblib tool
     def salary_agent(state): 
         query = state['messages'][-1].content
-        logger.info(f"NODE: specialist (salary) | Processing React...")
+        logger.info(f"NODE: specialist (salary) | Processing deterministically...")
         try:
-            system_msg = SALARY_PROMPT
-            agent = create_react_agent(llm, [predict_salary, web_search], prompt=system_msg)
-            response = agent.invoke({"messages": state["messages"]}, config={"recursion_limit": 4})
-            return {"messages": [response["messages"][-1]], "feedback": ["Salary Agent: Prediction complete."]}
+            # Step 1: Extract Age
+            extraction_sys_msg = SALARY_PROMPT
+            
+            # SECURITY FIX: Message Bounding
+            age_response = llm.invoke([
+                SystemMessage(content=extraction_sys_msg),
+                HumanMessage(content=query)
+            ]).content.strip().upper()
+            
+            logger.debug(f"Salary Agent extracted age: {age_response}")
+            
+            # Step 2: Validate and execute tool manually
+            if "MISSING" in age_response or "INVALID" in age_response:
+                return {
+                    "messages": [AIMessage(content="I need your age to predict your salary! Please tell me how old you are.")], 
+                    "feedback": ["Salary Agent: Missing or invalid age parameter."]
+                }
+            
+            try:
+                # Remove any stray characters the LLM might have included
+                age_int = int(''.join(filter(str.isdigit, age_response)))
+                
+                # Check for realistic age bounds
+                if age_int < 18 or age_int > 100:
+                    return {
+                        "messages": [AIMessage(content=f"While I can run the prediction for {age_int}, please note my training dataset is primarily based on typical working adult ages (18-65). \n\n" + predict_salary(age_int))], 
+                        "feedback": ["Salary Agent: Prediction complete with caveat."]
+                    }
+
+                # Execute prediction
+                prediction_result = predict_salary(age_int)
+                return {"messages": [AIMessage(content=prediction_result)], "feedback": ["Salary Agent: Prediction complete."]}
+                
+            except ValueError:
+                return {
+                    "messages": [AIMessage(content="I couldn't understand your age. Please provide it as a simple number.")], 
+                    "feedback": ["Salary Agent: Failed to parse age integer."]
+                }
+                
         except Exception as e:
             logger.exception("Salary Agent Error")
             return {"messages": [AIMessage(content="Error predicting salary: An internal error occurred.")], "feedback": ["Salary Error: Diagnostic failure."]}
