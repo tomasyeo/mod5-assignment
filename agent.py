@@ -27,6 +27,16 @@ def create_agent_graph(groq_api_key):
     llm = ChatGroq(temperature=0, model_name=GROQ_MODEL, groq_api_key=groq_api_key)
     rag = AdvancedRAG(groq_api_key)
 
+    # --- HELPER: BUILD CHAT HISTORY STRING ---
+    def get_chat_history_str(messages):
+        """Converts message sequence into a readable transcript for contextualization."""
+        history = ""
+        # Skip the very last message as it's the current query
+        for msg in messages[:-1]:
+            role = "User" if isinstance(msg, HumanMessage) else "Assistant"
+            history += f"{role}: {msg.content}\n"
+        return history.strip() if history else "No previous conversation."
+
     # --- NODE: GATEWAY ---
     def gateway(state):
         query = state['messages'][-1].content
@@ -34,8 +44,11 @@ def create_agent_graph(groq_api_key):
         
         try:
             # SECURITY FIX: Message Bounding
+            chat_history = get_chat_history_str(state["messages"])
+            contextualized_gateway_prompt = f"{GATEWAY_PROMPT}\n\nRecent Conversation History:\n{chat_history}"
+            
             response = llm.invoke([
-                SystemMessage(content=GATEWAY_PROMPT), 
+                SystemMessage(content=contextualized_gateway_prompt), 
                 HumanMessage(content=query)
             ]).content
             logger.debug(f"Gateway Raw Response: {response}")
@@ -45,16 +58,23 @@ def create_agent_graph(groq_api_key):
                 return {"next_node": "router", "feedback": ["Gateway: Approved."]}
             else:
                 logger.warning("Gateway: REJECTED")
-                rejection_msg = response.replace("REJECT", "").replace("reject", "").strip()
-                if not rejection_msg: rejection_msg = "I can only assist with Apple-related queries or salary predictions."
+                # SECURITY FIX: Only use the LLM's explanation if it explicitly includes 'REJECT'.
+                # This prevents an attacker from hijacking the gateway output to display malicious text.
+                if "REJECT" in response.upper():
+                    rejection_msg = response.upper().replace("REJECT", "").strip()
+                    # Convert back to a cleaner format if possible, or just use a fallback
+                    rejection_msg = "Your query was rejected as off-topic."
+                else:
+                    rejection_msg = "I can only assist with Apple-related queries or salary predictions."
+                
                 return {
                     "messages": [AIMessage(content=rejection_msg)], 
                     "next_node": END, 
                     "feedback": ["Gateway: Rejected topic."]
                 }
         except Exception as e:
-            logger.error(f"Gateway Error: {str(e)}")
-            return {"next_node": END, "messages": [AIMessage(content="Gateway Error: Unable to validate query.")], "feedback": [f"Gateway Error: {str(e)}"]}
+            logger.exception("Gateway Error")
+            return {"next_node": END, "messages": [AIMessage(content="Gateway Error: Unable to validate query.")], "feedback": ["Gateway Error: An internal error occurred."]}
 
     # --- NODE: ROUTER ---
     def router_node(state):
@@ -65,8 +85,11 @@ def create_agent_graph(groq_api_key):
         
         try:
             # SECURITY FIX: Message Bounding
+            chat_history = get_chat_history_str(state["messages"])
+            contextualized_router_prompt = f"{ROUTER_PROMPT}\n\nRecent Conversation History:\n{chat_history}"
+            
             category = llm.invoke([
-                SystemMessage(content=ROUTER_PROMPT),
+                SystemMessage(content=contextualized_router_prompt),
                 HumanMessage(content=query)
             ]).content.lower().strip()
             logger.debug(f"Router Classified Category: {category}")
@@ -80,18 +103,8 @@ def create_agent_graph(groq_api_key):
                 "feedback": [f"Router: Classified as {target}."]
             }
         except Exception as e:
-            logger.error(f"Router Error: {str(e)}")
-            return {"next_node": "tech_agent", "feedback": ["Router: Error, defaulting to Tech agent."]}
-
-    # --- HELPER: BUILD CHAT HISTORY STRING ---
-    def get_chat_history_str(messages):
-        """Converts message sequence into a readable transcript for contextualization."""
-        history = ""
-        # Skip the very last message as it's the current query
-        for msg in messages[:-1]:
-            role = "User" if isinstance(msg, HumanMessage) else "Assistant"
-            history += f"{role}: {msg.content}\n"
-        return history.strip() if history else "No previous conversation."
+            logger.exception("Router Error")
+            return {"next_node": "tech_agent", "feedback": ["Router: Error detected, defaulting to Tech agent."]}
 
     # --- DETERMINISTIC SPECIALIST WRAPPER (RAG Domains Only) ---
     def deterministic_specialist(state, domain, persona_prompt):
@@ -151,14 +164,15 @@ def create_agent_graph(groq_api_key):
             ]).content
             
             logger.debug(f"{domain} Agent: Synthesizing final answer...")
-            synth_sys_msg = persona_prompt + "\n\n" + SYNTHESIZE_SEARCH_PROMPT.format(
-                context=context, 
-                search_results=search_summary
-            )
+            synth_sys_msg = persona_prompt + "\n\n" + SYNTHESIZE_SEARCH_PROMPT
+            # SECURITY FIX: Mitigation for Indirect Prompt Injection.
+            # We move potentially malicious search results into the HumanMessage context.
+            standalone_human_msg = f"Standalone User Query: {standalone_query}\n\nWeb Search Results:\n{search_summary}\n\nKnowledge Base Context:\n{context}"
+            
             # SECURITY FIX: Message Bounding
             final_response = llm.invoke([
                 SystemMessage(content=synth_sys_msg),
-                HumanMessage(content=standalone_query)
+                HumanMessage(content=standalone_human_msg)
             ]).content
             
             logger.debug(f"{domain} Agent Final RAW Response (from Synthesis): {final_response}")
@@ -166,8 +180,8 @@ def create_agent_graph(groq_api_key):
             return {"messages": [AIMessage(content=final_response)], "feedback": logs + ["Answer synthesized from Web Search."]}
             
         except Exception as e:
-            logger.error(f"{domain} Agent Error: {str(e)}")
-            return {"messages": [AIMessage(content=f"Error in {domain} specialist: {str(e)}")], "feedback": [f"{domain} Error: {str(e)}"]}
+            logger.exception(f"{domain} Agent Error")
+            return {"messages": [AIMessage(content=f"Error in {domain} specialist: An internal error occurred.")], "feedback": [f"{domain} Error: Diagnostic failure."]}
 
     # --- SPECIALIST NODES ---
     def policy_agent(state): return deterministic_specialist(state, "policy", POLICY_PROMPT)
@@ -184,7 +198,8 @@ def create_agent_graph(groq_api_key):
             response = agent.invoke({"messages": state["messages"]}, config={"recursion_limit": 4})
             return {"messages": [response["messages"][-1]], "feedback": ["Salary Agent: Prediction complete."]}
         except Exception as e:
-            return {"messages": [AIMessage(content=f"Error predicting salary: {str(e)}")], "feedback": [f"Salary Error: {str(e)}"]}
+            logger.exception("Salary Agent Error")
+            return {"messages": [AIMessage(content="Error predicting salary: An internal error occurred.")], "feedback": ["Salary Error: Diagnostic failure."]}
 
     workflow = StateGraph(AgentState)
     
