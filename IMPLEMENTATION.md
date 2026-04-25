@@ -1,24 +1,24 @@
 # LangGraph Multi-Agent RAG System: Implementation Details
 
 ## Objective
-This document outlines the architectural design and technical implementation of the Apple Expert Squad application. The system is a high-performance, deterministic multi-agent network designed to maximize the reliability and accuracy of small-parameter language models (specifically `llama-3.1-8b-instant`) without relying on brittle autonomous loops.
+This document outlines the architectural design and technical implementation of the Apple Expert Squad application. This project represents a **State-Machine Orchestrated, Deterministic Multi-Agent Pipeline exposed via a REST API Facade.** It is an incredibly modern and robust way to build production-grade AI applications, specifically engineered to maximize the reliability and accuracy of small-parameter language models (specifically `llama-3.1-8b-instant`) without relying on brittle autonomous loops.
 
 ---
 
 ## 🏛️ AI Architecture Paradigm
 
-This project completely Abandons the "God Prompt" anti-pattern in favor of a highly structured, decentralized intelligence network. It achieves this through three foundational AI architecture patterns:
+This project architecturally abandons the "God Prompt" anti-pattern in favor of a highly structured, decentralized intelligence network based on **Service-Oriented Architecture (SOA)** and the **Multi-Agent System (MAS)** paradigm.
 
 ### 1. The Multi-Agent System (MAS) / Actor Pattern
 Instead of a single monolithic LLM prompt attempting to manage policies, products, and technical support simultaneously, the system is broken down into specialized agents. 
-Each agent (Policy, Product, Tech, Salary) functions as an independent "Actor." They receive a message, process it strictly according to their internal logic (their specific RAG domain or ML tool), and pass the result back to the central state. This enforces a strict **Separation of Concerns**, preventing context dilution and persona drift.
+Each agent (Policy, Product, Tech, Salary) functions as an independent **Actor**. They receive a message, process it strictly according to their internal logic (their specific RAG domain or ML tool), and pass the result back to the central state. This enforces a strict **Separation of Concerns**, preventing context dilution and persona drift.
 
 ### 2. Finite State Machine (FSM) via LangGraph
-The core orchestration of the AI workflow is modeled as a Directed Acyclic Graph (DAG) acting as a Finite State Machine.
-The system transitions through distinct, predictable states: `gateway` -> `router` -> `specialist_node` -> `END`. The flow of execution (the Conditional Edges) is determined dynamically by the output of the Semantic Router LLM, explicitly defining the exact path a user's query takes through the system based on its intent.
+The core orchestration of the AI workflow is modeled as a **Directed Acyclic Graph (DAG)** acting as a Finite State Machine.
+The system transitions through distinct, predictable states: `gateway` -> `router` -> `specialist_node` -> `END`. The flow of execution (the Conditional Edges) is determined dynamically by the output of the Semantic Router LLM, explicitly defining the exact execution path a user's query takes through the system based on its semantic intent.
 
 ### 3. The Chain of Responsibility (Deterministic RAG Pipeline)
-Autonomous ReAct (Reasoning + Acting) loops are notoriously unstable on 8B parameter models, often resulting in infinite tool-calling loops. To solve this, the RAG specialists implement a strict, linear **Chain of Responsibility**:
+Autonomous ReAct (Reasoning + Acting) loops are notoriously unstable on 8B parameter models. To solve this, the RAG specialists implement a strict, linear **Chain of Responsibility**:
 *Contextualizer -> Retriever -> Evaluator -> Web Scout Fallback -> Synthesizer.*
 This design guarantees that local RAG data is always prioritized before any external web search is authorized, physically preventing infinite loop hallucinations and drastically simplifying the cognitive load on the LLM.
 
@@ -26,25 +26,25 @@ This design guarantees that local RAG data is always prioritized before any exte
 
 ## 💻 Software Code Patterns (Python)
 
-The Python implementation is not a procedural script; it is a highly structured, Object-Oriented architecture that heavily utilizes structural and creational design patterns to ensure modularity, DRY (Don't Repeat Yourself) compliance, and testability.
+The Python implementation is a highly structured, **Object-Oriented architecture** that heavily utilizes structural and creational design patterns to ensure modularity, DRY (Don't Repeat Yourself) compliance, and testability.
 
 ### 1. The Factory Pattern
-When instantiating complex objects, the logic is encapsulated within Factories.
-*   **The Agent Factory (`create_agent_graph`):** This massive function doesn't just execute code; it *manufactures* the entire application. It instantiates the LLM, the RAG engine, defines the internal routing nodes, wires up the entire LangGraph `StateGraph`, and returns the fully compiled application object to the API layer.
-*   **The Logger Factory (`get_logger`):** Centralizes logging instantiation. Instead of repeating handler setups across files, modules simply call `logger = get_logger("my-module")` to receive a pre-configured stream and file handler.
+When instantiating complex objects, the creation logic is encapsulated within specialized Factories.
+*   **The Agent Factory (`create_agent_graph`):** This function manufactures the entire application. It instantiates the LLM, the RAG engine, defines the internal routing nodes, wires up the entire LangGraph `StateGraph`, and returns a fully compiled, ready-to-use graph object.
+*   **The Logger Factory (`get_logger`):** Centralizes logging instantiation. Modules simply call `logger = get_logger("my-module")` to receive a pre-configured stream and file handler, ensuring consistent logging across the entire project.
 
 ### 2. The Wrapper / Decorator Pattern (DRY Principle)
-This pattern is used to enforce DRY principles across the agent network.
-*   **The `deterministic_specialist` Function:** The Policy, Product, and Tech agents share an identical 80-line workflow. Instead of writing that logic three times, it is encapsulated in a single master function. The actual LangGraph nodes (`policy_agent`, `product_agent`) are just tiny wrappers that inject their specific domain constraints (e.g., `POLICY_PROMPT`) into the master function.
+This pattern is used to enforce DRY (Don't Repeat Yourself) principles across the agent network.
+*   **The `deterministic_specialist` Function:** The Policy, Product, and Tech agents share an identical 80-line workflow. Instead of writing that logic three times, it is encapsulated in a single master function. The actual LangGraph nodes (`policy_agent`, `product_agent`) are tiny, reusable wrappers that inject their specific domain constraints (e.g., `POLICY_PROMPT`) into the master function.
 
 ### 3. The Facade Pattern
-This pattern hides massive underlying complexity behind simple interfaces.
-*   **The API Facade (`app.py`):** The FastAPI `@app.post("/chat")` endpoint is a Facade for the entire AI system. The frontend sends a simple JSON object, and the endpoint handles API key validation, memory truncation, LangGraph invocation, and error sanitization entirely behind the scenes.
-*   **The Retrieval Facade (`AdvancedRAG`):** In `rag_engine.py`, the `get_context()` method hides the complexity of embedding initialization, ChromaDB metadata filtering, and Multi-Query LLM expansion behind a single, clean method call.
+This pattern provides a simplified interface to a larger body of complex code.
+*   **The API Facade (`app.py`):** The FastAPI `@app.post("/chat")` endpoint hides the massive complexity of history truncation, memory management, LangGraph invocation, and error sanitization behind a single REST API request.
+*   **The Retrieval Facade (`AdvancedRAG`):** In `rag_engine.py`, the `get_context()` method hides the complexity of embedding initialization, ChromaDB metadata filtering, and Multi-Query LLM expansion behind a single method call.
 
 ### 4. Dependency Injection
-This is a core principle for writing testable, modular Python.
-*   Internal modules (`agent.py`, `rag_engine.py`) **do not** read the `GROQ_API_KEY` from `os.environ` directly. Instead, `app.py` reads the configuration at the highest level and explicitly injects the dependency downstream. This isolates configuration logic and enables easy unit testing with mock API keys.
+This is a core principle for writing modular and testable Python.
+*   Internal modules (`agent.py`, `rag_engine.py`) do not hardcode the `GROQ_API_KEY`. Instead, `app.py` reads the configuration and **injects the dependency** downstream. This isolation enables effortless unit testing and maintains a clean boundary between configuration and logic.
 
 ---
 
@@ -117,6 +117,6 @@ The following libraries drive the core architecture of the application (versions
 | `sentence-transformers`| 5.4.1 | Backend library for running `all-MiniLM-L6-v2` text embedding models locally. |
 | `pydantic` | 2.13.3 | Data validation and settings management using Python type annotations. |
 | `python-dotenv` | 1.2.2 | Utility to securely load environment variables from a `.env` file. |
-| `duckduckgo-search` | 8.1.1 | Python library providing programmatic access to the DuckDuckGo search engine for web fallback. |
+| `ddgs` | 8.1.1 | Python library providing programmatic access to the DuckDuckGo search engine for web fallback. |
 | `Jinja2` | 3.1.6 | Templating engine (installed natively as a standard FastAPI/Starlette dependency). |
 | `aiofiles` | 25.1.0 | Asynchronous file I/O support required by FastAPI for serving `index.html`. |
