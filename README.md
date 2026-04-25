@@ -9,6 +9,7 @@ This project orchestrates a "Squad of Experts" using **LangGraph**, powered by G
 *   **LLM Engine:** Groq API (`llama-3.1-8b-instant`)
 *   **Vector Database:** ChromaDB with `all-MiniLM-L6-v2` local embeddings
 *   **Integrated Tools:** DuckDuckGo Web Search, Pre-trained ML Salary Predictor (`joblib`)
+*   **Resilience:** Robust error handling with graceful fallbacks for API rate limits and search timeouts.
 *   **Deployment:** Dockerized for Render.com or any containerized hosting service
 *   **Frontend:** Custom HTML/JS Chat UI (Dark Theme) served natively via FastAPI
 

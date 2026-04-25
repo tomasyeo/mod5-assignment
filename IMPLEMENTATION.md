@@ -62,13 +62,17 @@ Once a query passes the Gateway, the Router evaluates the semantic intent of the
 
 ## The Deterministic Pipeline (Replacing ReAct)
 
-To solve Context Amnesia and endless loop hallucinations common in autonomous ReAct agents powered by small models, the RAG specialists (Policy, Product, Tech) utilize a highly optimized, linear 5-step workflow:
+To solve Context Amnesia, endless loop hallucinations, and tool-calling instability common in small models, **all agents** (Policy, Product, Tech, and Salary) utilize highly optimized, linear workflows:
 
-1.  **Contextualize Query:** A fast LLM call reads the conversation history and rewrites the user's latest message into a standalone query. This resolves pronouns (e.g., "how much is it?" -> "What is the price of the Apple iPhone 16?").
-2.  **Grounded RAG Retrieval:** Fetches highly relevant chunks from the ChromaDB vector store using the explicitly grounded `standalone_query`.
-3.  **Evaluate & Decide (Lenient Inference):** The LLM evaluates the retrieved RAG context. The `EVALUATE_RAG_PROMPT` is designed with "Lenient Inference," mandating that the model infer general policies onto specific products.
-4.  **Targeted Web Search Fallback:** If RAG is deemed insufficient, the `web_search` tool (via DuckDuckGo) is called. The Web Scout sub-agent is instructed to act as a strict relevancy filter, silently discarding irrelevant search results (e.g., makeup catalogs) to prevent "Garbage In, Garbage Out" (GIGO) hallucinations.
-5.  **Synthesize (Rumor Separation):** The final LLM call synthesizes the data. The `SYNTHESIZE_SEARCH_PROMPT` explicitly differentiates between confirmed facts and unconfirmed rumors or concepts.
+1.  **Contextualize Query:** A fast LLM call reads the conversation history and rewrites the user's latest message into a standalone query.
+2.  **Grounded Retrieval / Extraction:** 
+    *   For RAG Agents: Fetches highly relevant chunks from the ChromaDB vector store.
+    *   For the Salary Agent: Strictly extracts the user's age as an integer, outputting standardized codes (`MISSING`, `INVALID`) for edge cases.
+3.  **Evaluate & Decide:** The LLM evaluates the retrieved context or extracted data to determine the next action.
+4.  **Targeted Execution:** 
+    *   For RAG: Executes a `web_search` fallback (via DuckDuckGo) only if database results are insufficient.
+    *   For Salary: Executes the `predict_salary` Python helper directly using the extracted age.
+5.  **Synthesize & Sanitize:** The final response is generated. All outputs are passed through a global exception sanitization layer. If any internal node (including third-party APIs like Groq or DuckDuckGo) fails or hits a rate limit, the system captures the traceback server-side and returns a generic, secure fallback message to the user.
 
 ---
 
