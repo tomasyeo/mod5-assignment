@@ -1,0 +1,36 @@
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Logs
+*.log
+test/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Project Specific Data & Vector DB
+data/chroma_db/
+data/chroma.sqlite3
+
+# IDEs
+.idea/
+.vscode/
+*.swp

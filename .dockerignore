@@ -1,0 +1,16 @@
+.env
+.venv
+env/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.DS_Store
+.git/
+.gitignore
+app.log
+data/chroma_db/
+data/chroma.sqlite3
+test/
